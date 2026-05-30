@@ -47,15 +47,44 @@
               </p>
             </div>
           </div>
-          <UToggle
-            v-model="repo.is_active"
-            :color="repo.is_active ? 'green' : 'gray'"
-            @update:model-value="(val: boolean) => toggleRepo(repo.id, val)"
-            @click.stop
-          />
+          <div class="flex items-center gap-2" @click.stop>
+            <UToggle
+              v-model="repo.is_active"
+              :color="repo.is_active ? 'green' : 'gray'"
+              @update:model-value="(val: boolean) => toggleRepo(repo.id, val)"
+            />
+            <UButton
+              color="red"
+              variant="ghost"
+              size="xs"
+              icon="i-heroicons-trash"
+              :loading="removingRepo === repo.id"
+              @click="confirmRemoveRepo(repo)"
+            />
+          </div>
         </div>
       </UCard>
     </div>
+
+    <!-- Remove repo confirmation modal -->
+    <UModal v-model="showRemoveModal">
+      <UCard class="bg-white dark:bg-gray-900">
+        <template #header>
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">断开仓库连接</h3>
+        </template>
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+          确定要断开 <strong>{{ repoToRemove?.github_repo }}</strong> 吗？这将删除 GitHub 上的 Webhook 并停止自动审查。
+        </p>
+        <template #footer>
+          <div class="flex justify-end gap-3">
+            <UButton color="gray" variant="ghost" @click="showRemoveModal = false">取消</UButton>
+            <UButton color="red" :loading="removingRepo === repoToRemove?.id" @click="removeRepo">
+              确认断开
+            </UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
 
     <!-- Add repo slideover -->
     <USlideover v-model="showRepoSelector">
@@ -132,6 +161,9 @@ const loadingRepos = ref(false)
 const repoLoadError = ref('')
 const githubRepos = ref<GitHubRepo[]>([])
 const addingRepo = ref('') // track which repo is being added
+const removingRepo = ref('') // track which repo is being removed
+const showRemoveModal = ref(false)
+const repoToRemove = ref<ConnectedRepo | null>(null)
 
 interface ConnectedRepo {
   id: string
@@ -229,6 +261,36 @@ async function addRepo(repo: GitHubRepo) {
 async function toggleRepo(repoId: string, active: boolean) {
   await supabase.from('repositories').update({ is_active: active }).eq('id', repoId)
   appStore.addToast(active ? '自动审查已开启' : '自动审查已关闭', { color: 'indigo' })
+}
+
+function confirmRemoveRepo(repo: ConnectedRepo) {
+  repoToRemove.value = repo
+  showRemoveModal.value = true
+}
+
+async function removeRepo() {
+  const repo = repoToRemove.value
+  if (!repo) return
+
+  removingRepo.value = repo.id
+
+  // 1. Delete webhook from GitHub
+  if (repo.webhook_id) {
+    await deleteWebhook(repo.github_repo, repo.webhook_id)
+  }
+
+  // 2. Delete repo from DB (cascades to PRs, reviews, comments)
+  const { error } = await supabase.from('repositories').delete().eq('id', repo.id)
+  if (error) {
+    appStore.addToast(`断开失败: ${error.message}`, { color: 'red' })
+  } else {
+    appStore.addToast(`已断开连接: ${repo.github_repo}`, { color: 'green' })
+  }
+
+  removingRepo.value = ''
+  showRemoveModal.value = false
+  repoToRemove.value = null
+  await loadConnectedRepos()
 }
 
 onMounted(async () => {

@@ -47,7 +47,7 @@
               class="w-20 h-20 rounded-full flex items-center justify-center border-4"
               :class="scoreColor"
             >
-              <span class="text-2xl font-bold">{{ review.score }}/10</span>
+              <span class="text-2xl font-bold">{{ review.score != null ? `${review.score}/10` : '—' }}</span>
             </div>
             <p class="text-xs text-gray-400 mt-1">Score</p>
           </div>
@@ -197,11 +197,18 @@ async function triggerReview() {
       method: 'POST',
       body: { pr_id: pr.value.id },
     })
-    // Reload after a delay
-    setTimeout(() => loadReview(), 5000)
+    // Poll for review completion (every 2s, up to 60s)
+    let elapsed = 0
+    const poll = setInterval(async () => {
+      elapsed += 2000
+      await loadReview()
+      // Stop polling when review completes or times out
+      if (review.value?.status === 'completed' || review.value?.status === 'failed' || elapsed >= 60000) {
+        clearInterval(poll)
+      }
+    }, 2000)
   } catch (e) {
     console.error('Failed to trigger review:', e)
-  } finally {
     triggering.value = false
   }
 }
