@@ -246,14 +246,14 @@ async function runReviewInBackground(prId: string, repoId: string) {
     console.log('[Review] Posting review to GitHub...')
     const criticalOnly = result.comments.filter(c => c.severity === 'critical' || c.severity === 'warning')
     const body = [
-      '## 🤖 AI Code Review',
+      '## 🤖 AI 代码审查',
       '',
-      `**Score: ${result.score}/10** | ${result.comments.length} issues found`,
+      `**评分: ${result.score}/10** | 发现 ${result.comments.length} 个问题`,
       '',
       result.summary,
     ]
     if (criticalOnly.length > 0) {
-      body.push('', '### 🔴 Critical & Warnings')
+      body.push('', '### 🔴 严重问题 & 警告')
       criticalOnly.forEach(c => {
         body.push(`- **\`${c.file_path}\`** — ${c.message}`)
       })
@@ -265,7 +265,7 @@ async function runReviewInBackground(prId: string, repoId: string) {
         `**${c.severity.toUpperCase()}** [${c.category}]`,
         '',
         c.message,
-        c.suggestion ? `\n💡 **Suggestion:**\n\`\`\`suggestion\n${c.suggestion}\n\`\`\`` : '',
+        c.suggestion ? `\n💡 **建议:**\n\`\`\`suggestion\n${c.suggestion}\n\`\`\`` : '',
       ].join('\n'),
     }))
 

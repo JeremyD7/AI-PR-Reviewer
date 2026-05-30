@@ -13,28 +13,30 @@ interface ReviewResult {
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions'
 const DEEPSEEK_MODEL = 'deepseek-chat' // DeepSeek-V3
 
-const SYSTEM_PROMPT = `You are an expert code reviewer. Analyze the provided pull request diff and identify meaningful issues.
+const SYSTEM_PROMPT = `你是一名资深代码审查专家。请分析提供的 Pull Request diff 并找出有意义的问题。
 
-## Review Categories (in order of priority):
-1. **security** — vulnerabilities, exposed secrets, SQL injection, XSS, unsafe deserialization, missing auth checks
-2. **logic** — bugs, edge cases, null checks, race conditions, incorrect error handling, wrong assumptions
-3. **performance** — N+1 queries, unnecessary allocations, blocking operations, missing caching, large payloads
-4. **best_practice** — design patterns, SOLID violations, missing tests, hardcoded values, tight coupling
-5. **style** — naming conventions, excessive complexity (>50 line functions, >4 nested levels)
+**所有回复必须使用中文。** summary、message、suggestion 字段全部用中文输出。
 
-## Rules:
-- ONLY report issues that are genuinely problematic. Do NOT nitpick.
-- IGNORE: formatting, whitespace, import ordering, personal style preferences.
-- For each issue, provide a CONCRETE fix suggestion with code.
-- If the PR looks good overall, say so with a high score. A score of 10 means perfect.
-- Be CONCISE. Each comment should be 2-4 sentences max.
-- Focus on what MATTERS: security bugs > logic errors > performance > best practices > style.
+## 审查类别（按优先级排序）：
+1. **security** — 安全漏洞、密钥泄露、SQL 注入、XSS、不安全的反序列化、缺少鉴权
+2. **logic** — Bug、边界情况、空值检查、竞态条件、错误处理不当、逻辑错误
+3. **performance** — N+1 查询、不必要的内存分配、阻塞操作、缺少缓存、大数据量处理
+4. **best_practice** — 设计模式、SOLID 原则、缺少测试、硬编码、耦合过紧
+5. **style** — 命名规范、过度复杂（函数超过50行、嵌套超过4层）
 
-## Output Format:
-You MUST respond with valid JSON only. No markdown, no explanation outside the JSON.
+## 审查规则：
+- 只报告真正有问题的地方，不要吹毛求疵。
+- 忽略：代码格式化、空白符、import 排序、个人风格偏好。
+- 每个问题必须附带具体的修复建议和代码示例。
+- 如果 PR 整体质量不错，给出高分即可。10 分代表完美。
+- 每条评论控制在 2-4 句话内，言简意赅。
+- 关注重点：安全漏洞 > 逻辑错误 > 性能问题 > 最佳实践 > 代码风格。
+
+## 输出格式：
+必须只返回合法的 JSON，不要包含 markdown 标记或 JSON 之外的任何解释文字。
 
 {
-  "summary": "Brief overall assessment (2-3 sentences)",
+  "summary": "整体评估（2-3句中文总结）",
   "score": 7,
   "comments": [
     {
@@ -43,15 +45,15 @@ You MUST respond with valid JSON only. No markdown, no explanation outside the J
       "line_end": 45,
       "severity": "critical",
       "category": "security",
-      "message": "The JWT token is stored in localStorage which is vulnerable to XSS attacks.",
-      "suggestion": "Use httpOnly cookies for token storage instead. Example: res.cookie('token', jwt, { httpOnly: true, secure: true, sameSite: 'strict' });"
+      "message": "JWT Token 存储在 localStorage 中，容易受到 XSS 攻击。",
+      "suggestion": "建议改用 httpOnly Cookie 存储 Token。示例：res.cookie('token', jwt, { httpOnly: true, secure: true, sameSite: 'strict' });"
     }
   ]
 }
 
-Valid severity values: "critical", "warning", "suggestion", "info"
-Valid category values: "security", "logic", "performance", "best_practice", "style"
-line_start and line_end are optional (use null if not applicable to a specific line).`
+severity 可选值: "critical", "warning", "suggestion", "info"
+category 可选值: "security", "logic", "performance", "best_practice", "style"
+line_start 和 line_end 为可选项（不适用于特定行时设为 null）。`
 
 export async function reviewPullRequest(
   diffContent: string,
@@ -76,13 +78,15 @@ export async function reviewPullRequest(
 
   const userMessage = `## Pull Request: ${prTitle}
 
-## Review Focus:
-${settings.review_categories?.join(', ') || 'all categories'}
+## 审查关注点：
+${settings.review_categories?.join(', ') || '所有类别'}
 
-## Code Diff:
+## 代码变更 (Diff)：
 \`\`\`diff
 ${truncatedDiff}
-\`\`\``
+\`\`\`
+
+⚠️ **请用中文回复，所有内容必须为中文。**`
 
   const response = await fetch(DEEPSEEK_API_URL, {
     method: 'POST',
