@@ -25,7 +25,7 @@
 
     <!-- Loading -->
     <div v-if="loading" class="text-center py-16">
-      <ULoadingIcon class="w-8 h-8 text-indigo-500 animate-spin mx-auto" />
+      <UIcon name="i-heroicons-arrow-path-20-solid" class="w-8 h-8 text-indigo-500 animate-spin mx-auto" />
       <p class="text-gray-500 dark:text-gray-400 mt-3">Loading review...</p>
     </div>
 

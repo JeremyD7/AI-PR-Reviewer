@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
     <div class="text-center">
-      <ULoadingIcon v-if="loading" name="i-heroicons-arrow-path-20-solid" class="w-8 h-8 text-indigo-500 animate-spin mx-auto" />
+      <UIcon v-if="loading" name="i-heroicons-arrow-path-20-solid" class="w-8 h-8 text-indigo-500 animate-spin mx-auto" />
       <p class="mt-4 text-gray-600 dark:text-gray-400">{{ statusMessage }}</p>
     </div>
   </div>

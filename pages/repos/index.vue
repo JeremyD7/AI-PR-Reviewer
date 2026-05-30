@@ -73,7 +73,13 @@
         />
 
         <div v-if="loadingRepos" class="text-center py-8">
-          <ULoadingIcon class="w-6 h-6 text-indigo-500 animate-spin mx-auto" />
+          <UIcon name="i-heroicons-arrow-path-20-solid" class="w-6 h-6 text-indigo-500 animate-spin mx-auto" />
+          <p class="text-sm text-gray-400 mt-2">Loading your repositories...</p>
+        </div>
+
+        <div v-else-if="repoLoadError" class="text-center py-8">
+          <UIcon name="i-heroicons-exclamation-triangle" class="w-8 h-8 text-red-400 mx-auto mb-2" />
+          <p class="text-sm text-red-600 dark:text-red-400">{{ repoLoadError }}</p>
         </div>
 
         <div v-else class="space-y-2">
@@ -114,6 +120,7 @@ const user = useSupabaseUser()
 const showRepoSelector = ref(false)
 const repoSearch = ref('')
 const loadingRepos = ref(false)
+const repoLoadError = ref('')
 const githubRepos = ref<GitHubRepo[]>([])
 const addedRepoIds = ref(new Set<number>())
 
@@ -148,26 +155,23 @@ async function loadConnectedRepos() {
 
 async function loadGitHubRepos() {
   loadingRepos.value = true
+  repoLoadError.value = ''
   try {
     const { data: session } = await supabase.auth.getSession()
     const token = session.session?.provider_token
 
     if (!token) {
-      // Re-auth to get GitHub token
-      await supabase.auth.signInWithOAuth({
-        provider: 'github',
-        options: { redirectTo: `${window.location.origin}/repos` },
-      })
+      repoLoadError.value = 'GitHub token not available. Please re-login.'
       return
     }
 
     // Proxy through our server to avoid CORS
-    const { data } = await $fetch<{ repos: GitHubRepo[] }>('/api/github/repos', {
+    const result = await $fetch<{ repos: GitHubRepo[] }>('/api/github/repos', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    githubRepos.value = data.repos || []
-  } catch (e) {
-    console.error('Failed to load GitHub repos:', e)
+    githubRepos.value = result.repos || []
+  } catch (e: any) {
+    repoLoadError.value = e?.message || 'Failed to load repos'
   } finally {
     loadingRepos.value = false
   }
