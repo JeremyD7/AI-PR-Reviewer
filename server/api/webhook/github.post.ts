@@ -125,7 +125,7 @@ async function runReviewInBackground(prId: string, repoId: string) {
       repo_id: repoId,
       status: 'in_progress',
       issue_count: 0,
-      model: 'claude-sonnet-4-6',
+      model: 'deepseek-chat',
     })
     .select()
     .single()

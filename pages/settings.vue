@@ -41,9 +41,9 @@
           </UBadge>
         </div>
         <div class="flex items-center justify-between">
-          <span class="text-sm text-gray-600 dark:text-gray-400">Claude API</span>
-          <UBadge :color="services.claude ? 'green' : 'red'" size="sm">
-            {{ services.claude ? 'Configured' : 'Not Configured' }}
+          <span class="text-sm text-gray-600 dark:text-gray-400">DeepSeek API</span>
+          <UBadge :color="services.deepseek ? 'green' : 'red'" size="sm">
+            {{ services.deepseek ? 'Configured' : 'Not Configured' }}
           </UBadge>
         </div>
       </div>
@@ -71,7 +71,7 @@ const user = useSupabaseUser()
 const services = ref({
   supabase: false,
   github: false,
-  claude: false,
+  deepseek: false,
 })
 
 async function signOut() {
@@ -89,6 +89,6 @@ onMounted(async () => {
 
   // Check Claude (via env)
   const config = useRuntimeConfig()
-  services.value.claude = !!config.anthropicApiKey
+  services.value.deepseek = !!config.deepseekApiKey
 })
 </script>

@@ -19,7 +19,7 @@ export default defineNuxtConfig({
     githubAppId: process.env.GITHUB_APP_ID,
     githubAppPrivateKey: process.env.GITHUB_APP_PRIVATE_KEY,
     githubAppWebhookSecret: process.env.GITHUB_APP_WEBHOOK_SECRET,
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+    deepseekApiKey: process.env.DEEPSEEK_API_KEY,
     supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY,
 
     // Public (exposed to client)

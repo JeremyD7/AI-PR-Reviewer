@@ -1,8 +1,7 @@
 /**
  * AI Review Engine
- * Core logic for analyzing PR diffs using Claude API
+ * Core logic for analyzing PR diffs using DeepSeek API (OpenAI-compatible)
  */
-import Anthropic from '@anthropic-ai/sdk'
 import type { ReviewComment, ReviewSettings } from '~/types/database'
 
 interface ReviewResult {
@@ -10,6 +9,9 @@ interface ReviewResult {
   score: number
   comments: Omit<ReviewComment, 'id' | 'review_id' | 'created_at' | 'github_comment_id'>[]
 }
+
+const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions'
+const DEEPSEEK_MODEL = 'deepseek-chat' // DeepSeek-V3
 
 const SYSTEM_PROMPT = `You are an expert code reviewer. Analyze the provided pull request diff and identify meaningful issues.
 
@@ -42,7 +44,7 @@ You MUST respond with valid JSON only. No markdown, no explanation outside the J
       "severity": "critical",
       "category": "security",
       "message": "The JWT token is stored in localStorage which is vulnerable to XSS attacks.",
-      "suggestion": "Use httpOnly cookies for token storage instead:\\n\\n// Set cookie server-side\\nres.cookie('token', jwt, { httpOnly: true, secure: true, sameSite: 'strict' });"
+      "suggestion": "Use httpOnly cookies for token storage instead. Example: res.cookie('token', jwt, { httpOnly: true, secure: true, sameSite: 'strict' });"
     }
   ]
 }
@@ -57,22 +59,20 @@ export async function reviewPullRequest(
   settings: ReviewSettings,
 ): Promise<ReviewResult> {
   const config = useRuntimeConfig()
-  const apiKey = config.anthropicApiKey
+  const apiKey = config.deepseekApiKey
 
   if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY is not configured')
+    throw new Error('DEEPSEEK_API_KEY is not configured')
   }
 
   // Filter diff by ignore patterns
   const filteredDiff = filterDiffByPatterns(diffContent, settings.ignore_patterns || [])
 
-  // Truncate if too large (Claude has context limits)
-  const maxChars = 100000
+  // Truncate if too large (DeepSeek context: 64K tokens ≈ ~180K chars for safety)
+  const maxChars = 150000
   const truncatedDiff = filteredDiff.length > maxChars
     ? filteredDiff.slice(0, maxChars) + '\n\n... [diff truncated due to size]'
     : filteredDiff
-
-  const anthropic = new Anthropic({ apiKey })
 
   const userMessage = `## Pull Request: ${prTitle}
 
@@ -84,25 +84,43 @@ ${settings.review_categories?.join(', ') || 'all categories'}
 ${truncatedDiff}
 \`\`\``
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
-    system: SYSTEM_PROMPT,
-    messages: [
-      { role: 'user', content: userMessage },
-    ],
+  const response = await fetch(DEEPSEEK_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: DEEPSEEK_MODEL,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userMessage },
+      ],
+      max_tokens: 4096,
+      temperature: 0.1, // Low temperature for consistent code review
+      stream: false,
+    }),
   })
 
-  // Parse JSON from response
-  const text = response.content
-    .filter(block => block.type === 'text')
-    .map(block => (block as { type: 'text'; text: string }).text)
-    .join('')
+  if (!response.ok) {
+    const errText = await response.text()
+    throw new Error(`DeepSeek API error (${response.status}): ${errText}`)
+  }
+
+  const data = await response.json() as {
+    choices: Array<{ message: { content: string } }>
+  }
+
+  const text = data.choices?.[0]?.message?.content || ''
+
+  if (!text) {
+    throw new Error('Empty response from DeepSeek API')
+  }
 
   // Extract JSON (handle possible markdown wrapping)
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) {
-    throw new Error('Failed to extract JSON from AI response')
+    throw new Error(`Failed to extract JSON from AI response: ${text.slice(0, 300)}`)
   }
 
   let result: ReviewResult

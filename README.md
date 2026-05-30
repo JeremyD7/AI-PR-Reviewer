@@ -9,7 +9,7 @@ Automated AI-powered code review for your GitHub pull requests.
 | Framework | **Nuxt 3** (Vue 3 + Vite + Nitro) |
 | UI Library | **Nuxt UI v2** (Tailwind CSS + Headless UI) |
 | Database | **Supabase** (PostgreSQL + Auth + Realtime) |
-| AI Engine | **Claude API** (Anthropic, Sonnet 4.6) |
+| AI Engine | **DeepSeek API** (V3, OpenAI-compatible) |
 | State | **Pinia** |
 | Deploy | Vercel / Node server |
 
@@ -66,7 +66,7 @@ Automated AI-powered code review for your GitHub pull requests.
 1. **Node.js** ≥ 18
 2. **Supabase** account → [supabase.com](https://supabase.com)
 3. **GitHub OAuth App** → [github.com/settings/developers](https://github.com/settings/developers)
-4. **Anthropic API Key** → [console.anthropic.com](https://console.anthropic.com)
+4. **DeepSeek API Key** → [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys)
 
 ## Quick Start
 
@@ -107,7 +107,7 @@ GITHUB_CLIENT_ID=your-github-oauth-client-id
 GITHUB_CLIENT_SECRET=your-github-oauth-client-secret
 GITHUB_REDIRECT_URI=http://localhost:3000/auth/callback
 
-ANTHROPIC_API_KEY=sk-ant-your-key
+DEEPSEEK_API_KEY=sk-your-key
 NUXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 

@@ -8,9 +8,6 @@ export default defineNuxtPlugin((nuxtApp) => {
   nuxtApp.vueApp.use(pinia)
 
   // Make pinia available via useNuxtApp().$pinia
-  nuxtApp.provide('pinia', pinia)
-
-  // Also return for injection
   return {
     provide: {
       pinia,
