@@ -86,8 +86,9 @@
           <div
             v-for="repo in filteredGitHubRepos"
             :key="repo.id"
-            class="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
-            @click="addRepo(repo)"
+            class="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+            :class="addingRepo === repo.full_name ? 'opacity-50 cursor-wait' : 'cursor-pointer'"
+            @click="addingRepo ? undefined : addRepo(repo)"
           >
             <UIcon name="i-simple-icons-github" class="w-5 h-5 text-gray-500 flex-shrink-0" />
             <div class="flex-1 min-w-0">
@@ -95,7 +96,12 @@
               <p class="text-xs text-gray-400 truncate">{{ repo.description || 'No description' }}</p>
             </div>
             <UIcon
-              v-if="addedRepoIds.has(repo.id)"
+              v-if="addingRepo === repo.full_name"
+              name="i-heroicons-arrow-path-20-solid"
+              class="w-5 h-5 text-indigo-500 animate-spin flex-shrink-0"
+            />
+            <UIcon
+              v-else-if="isRepoConnected(repo.full_name)"
               name="i-heroicons-check-circle"
               class="w-5 h-5 text-green-500 flex-shrink-0"
             />
@@ -116,18 +122,20 @@ import type { GitHubRepo } from '~/types/github'
 
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
+const { fetchRepos, createWebhook, deleteWebhook, error: githubError } = useGitHub()
 
 const showRepoSelector = ref(false)
 const repoSearch = ref('')
 const loadingRepos = ref(false)
 const repoLoadError = ref('')
 const githubRepos = ref<GitHubRepo[]>([])
-const addedRepoIds = ref(new Set<number>())
+const addingRepo = ref('') // track which repo is being added
 
 interface ConnectedRepo {
   id: string
   github_repo: string
   is_active: boolean
+  webhook_id: string | null
   settings: any
   created_at: string
 }
@@ -141,6 +149,10 @@ const filteredGitHubRepos = computed(() => {
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString()
+}
+
+function isRepoConnected(fullName: string): boolean {
+  return connectedRepos.value.some(r => r.github_repo === fullName)
 }
 
 async function loadConnectedRepos() {
@@ -157,19 +169,9 @@ async function loadGitHubRepos() {
   loadingRepos.value = true
   repoLoadError.value = ''
   try {
-    const { data: session } = await supabase.auth.getSession()
-    const token = session.session?.provider_token
-
-    if (!token) {
-      repoLoadError.value = 'GitHub token not available. Please re-login.'
-      return
-    }
-
-    // Proxy through our server to avoid CORS
-    const result = await $fetch<{ repos: GitHubRepo[] }>('/api/github/repos', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    githubRepos.value = result.repos || []
+    const repos = await fetchRepos()
+    githubRepos.value = repos
+    repoLoadError.value = githubError.value
   } catch (e: any) {
     repoLoadError.value = e?.message || 'Failed to load repos'
   } finally {
@@ -178,7 +180,10 @@ async function loadGitHubRepos() {
 }
 
 async function addRepo(repo: GitHubRepo) {
-  const { error } = await supabase.from('repositories').upsert({
+  addingRepo.value = repo.full_name
+
+  // 1. Save repo to database
+  const { error: dbError } = await supabase.from('repositories').upsert({
     user_id: user.value?.id,
     github_repo: repo.full_name,
     repo_name: repo.name,
@@ -191,10 +196,27 @@ async function addRepo(repo: GitHubRepo) {
     },
   }, { onConflict: 'user_id,github_repo' })
 
-  if (!error) {
-    addedRepoIds.value.add(repo.id)
-    await loadConnectedRepos()
+  if (dbError) {
+    repoLoadError.value = `Failed to save repo: ${dbError.message}`
+    addingRepo.value = ''
+    return
   }
+
+  // 2. Create webhook on GitHub
+  const whResult = await createWebhook(repo.full_name)
+
+  if (whResult) {
+    // Save webhook ID to DB
+    await supabase.from('repositories').update({
+      webhook_id: whResult.webhook_id,
+    }).eq('user_id', user.value?.id).eq('github_repo', repo.full_name)
+  } else {
+    // Webhook creation failed — still keep the repo but warn
+    repoLoadError.value = `Repo connected, but webhook failed: ${githubError.value || 'unknown error'}`
+  }
+
+  addingRepo.value = ''
+  await loadConnectedRepos()
 }
 
 async function toggleRepo(repoId: string, active: boolean) {

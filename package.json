@@ -14,10 +14,10 @@
     "db:types": "supabase gen types typescript --local > types/database.types.ts"
   },
   "dependencies": {
-
     "@nuxt/ui": "^2.21.1",
     "@nuxtjs/supabase": "^1.5.2",
     "@supabase/supabase-js": "^2.49.1",
+    "ngrok": "^5.0.0-beta.2",
     "nuxt": "^3.17.0",
     "pinia": "^2.3.1"
   },

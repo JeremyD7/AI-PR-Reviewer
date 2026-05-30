@@ -1,14 +1,16 @@
 /**
  * GitHub API composable (client-side)
+ * All GitHub API calls are proxied through our server to keep secrets server-side
  */
-import type { GitHubRepo, GitHubPR, GitHubPRFile } from '~/types/github'
+import type { GitHubRepo } from '~/types/github'
 
 export function useGitHub() {
   const supabase = useSupabaseClient()
   const loading = ref(false)
+  const error = ref('')
 
   /**
-   * Get the current user's GitHub access token
+   * Get the current user's GitHub access token from their Supabase session
    */
   async function getToken(): Promise<string | null> {
     const { data } = await supabase.auth.getSession()
@@ -20,65 +22,83 @@ export function useGitHub() {
    */
   async function fetchRepos(): Promise<GitHubRepo[]> {
     loading.value = true
+    error.value = ''
     try {
       const token = await getToken()
-      if (!token) throw new Error('Not authenticated with GitHub')
+      if (!token) {
+        error.value = 'Not authenticated with GitHub. Please re-login.'
+        return []
+      }
 
-      const { data } = await $fetch<{ repos: GitHubRepo[] }>('/api/github/repos', {
+      const result = await $fetch<{ repos: GitHubRepo[] }>('/api/github/repos', {
         headers: { Authorization: `Bearer ${token}` },
       })
-      return data?.repos || []
+      return result.repos || []
+    } catch (e: any) {
+      error.value = e?.message || 'Failed to fetch repositories'
+      return []
     } finally {
       loading.value = false
     }
   }
 
   /**
-   * Create a webhook for a repository
+   * Create a webhook on a GitHub repository (via server proxy)
+   * Returns webhook ID on success, null on failure
    */
-  async function createWebhook(repoFullName: string): Promise<string | null> {
+  async function createWebhook(repoFullName: string): Promise<{ webhook_id: string; active: boolean } | null> {
+    error.value = ''
     try {
       const token = await getToken()
-      if (!token) return null
+      if (!token) {
+        error.value = 'Not authenticated with GitHub. Please re-login.'
+        return null
+      }
 
-      const config = useRuntimeConfig()
-      const webhookUrl = `${config.public.appUrl}/api/webhook/github`
-
-      const [owner, repo] = repoFullName.split('/')
-      const response = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/hooks`,
+      const result = await $fetch<{ webhook_id: string; active: boolean; webhook_url: string }>(
+        '/api/github/webhooks',
         {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/vnd.github.v3+json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            name: 'web',
-            active: true,
-            events: ['pull_request'],
-            config: {
-              url: webhookUrl,
-              content_type: 'json',
-              secret: '',
-            },
-          }),
+          headers: { Authorization: `Bearer ${token}` },
+          body: { repoFullName },
         }
       )
-
-      if (!response.ok) return null
-      const data = await response.json() as { id: string }
-      return data.id
-    } catch {
+      return { webhook_id: result.webhook_id, active: result.active }
+    } catch (e: any) {
+      error.value = e?.data?.message || e?.message || 'Failed to create webhook'
+      console.error('Webhook creation failed:', e)
       return null
+    }
+  }
+
+  /**
+   * Delete a webhook from a GitHub repository (via server proxy)
+   */
+  async function deleteWebhook(repoFullName: string, webhookId: string): Promise<boolean> {
+    error.value = ''
+    try {
+      const token = await getToken()
+      if (!token) return false
+
+      const [owner, repo] = repoFullName.split('/')
+      const result = await $fetch<{ success: boolean }>('/api/github/webhooks', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+        body: { owner, repo, webhookId },
+      })
+      return result.success
+    } catch (e: any) {
+      error.value = e?.message || 'Failed to delete webhook'
+      return false
     }
   }
 
   return {
     loading,
+    error,
     fetchRepos,
     getToken,
     createWebhook,
+    deleteWebhook,
   }
 }

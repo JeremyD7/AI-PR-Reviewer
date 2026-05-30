@@ -1,6 +1,7 @@
 /**
  * GitHub API helpers (server-side)
  */
+import crypto from 'crypto'
 import type { GitHubPRFile, GitHubRepo, GitHubPR, GitHubWebhookPayload } from '~/types/github'
 
 /**
@@ -141,7 +142,6 @@ export function verifyWebhookSignature(
   signature: string,
   secret: string,
 ): boolean {
-  const crypto = require('crypto')
   const expected = `sha256=${crypto.createHmac('sha256', secret).update(payload).digest('hex')}`
   return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
 }
@@ -184,7 +184,6 @@ export async function getInstallationToken(
 }
 
 function generateAppJwt(appId: string, privateKey: string): string {
-  const crypto = require('crypto')
   const now = Math.floor(Date.now() / 1000)
 
   const payload = {

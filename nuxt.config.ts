@@ -53,4 +53,11 @@ export default defineNuxtConfig({
   typescript: {
     strict: true,
   },
+
+  // Allow ngrok tunneling for webhook testing
+  vite: {
+    server: {
+      allowedHosts: ['.ngrok-free.dev', '.ngrok.io'],
+    },
+  },
 });

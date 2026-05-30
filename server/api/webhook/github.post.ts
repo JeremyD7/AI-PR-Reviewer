@@ -1,6 +1,8 @@
 /**
  * GitHub Webhook Receiver
  * Listens for PR events and triggers AI reviews
+ *
+ * GitHub → POST /api/webhook/github → verify → create PR record → trigger AI review
  */
 import { verifyWebhookSignature } from '~/server/utils/github'
 
@@ -8,20 +10,45 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
   const secret = config.githubAppWebhookSecret
 
-  // Verify signature
+  // Read raw body for signature verification
   const signature = getHeader(event, 'x-hub-signature-256') || ''
-  const body = await readRawBody(event)
+  const eventType = getHeader(event, 'x-github-event')
+  const deliveryId = getHeader(event, 'x-github-delivery-id')
+
+  console.log(`[Webhook] Received: ${eventType} (delivery: ${deliveryId})`)
+
+  // Verify webhook signature (skip if secret not configured — useful for dev/testing)
+  let body: string
+  try {
+    body = await readRawBody(event) || ''
+  } catch {
+    console.error('[Webhook] Failed to read body')
+    throw createError({ statusCode: 400, message: 'Cannot read request body' })
+  }
 
   if (!body) {
+    console.error('[Webhook] Empty body')
     throw createError({ statusCode: 400, message: 'Empty body' })
   }
 
-  if (secret && !verifyWebhookSignature(body, signature, secret)) {
-    throw createError({ statusCode: 401, message: 'Invalid signature' })
+  if (secret) {
+    const isValid = verifyWebhookSignature(body, signature, secret)
+    if (!isValid) {
+      console.error('[Webhook] Invalid signature')
+      throw createError({ statusCode: 401, message: 'Invalid signature' })
+    }
+  } else {
+    console.warn('[Webhook] ⚠️  No webhook secret configured — skipping verification')
   }
 
-  const payload = JSON.parse(body)
-  const eventType = getHeader(event, 'x-github-event')
+  // Parse payload
+  let payload: any
+  try {
+    payload = JSON.parse(body)
+  } catch {
+    console.error('[Webhook] Invalid JSON')
+    throw createError({ statusCode: 400, message: 'Invalid JSON' })
+  }
 
   // Only handle PR events
   if (eventType !== 'pull_request') {
@@ -29,8 +56,11 @@ export default defineEventHandler(async (event) => {
   }
 
   const action = payload.action
+  console.log(`[Webhook] PR ${action}: ${payload.pull_request?.title || 'unknown'}`)
+
+  // Only review on: opened, synchronize (new push), reopened
   if (!['opened', 'synchronize', 'reopened'].includes(action)) {
-    return { message: `PR ${action} — review not needed` }
+    return { message: `PR ${action} — no review needed` }
   }
 
   const repoFullName = payload.repository?.full_name
@@ -40,25 +70,27 @@ export default defineEventHandler(async (event) => {
 
   // Find matching repo in our database
   const supabase = getServerSupabase()
-  const { data: repoRecord } = await supabase
+  const { data: repoRecord, error: repoError } = await supabase
     .from('repositories')
     .select('*')
     .eq('github_repo', repoFullName)
     .eq('is_active', true)
     .single()
 
-  if (!repoRecord) {
+  if (repoError || !repoRecord) {
+    console.log(`[Webhook] Repo not configured or inactive: ${repoFullName}`)
     return { message: `Repository ${repoFullName} not configured for auto-review` }
   }
 
   if (!repoRecord.settings?.auto_review) {
+    console.log(`[Webhook] Auto-review disabled for: ${repoFullName}`)
     return { message: `Auto-review disabled for ${repoFullName}` }
   }
 
   const pr = payload.pull_request
 
   // Upsert PR record
-  const { data: prRecord } = await supabase
+  const { data: prRecord, error: prError } = await supabase
     .from('pull_requests')
     .upsert({
       repo_id: repoRecord.id,
@@ -73,14 +105,16 @@ export default defineEventHandler(async (event) => {
     .select()
     .single()
 
-  if (!prRecord) {
+  if (prError || !prRecord) {
+    console.error('[Webhook] Failed to save PR:', prError)
     throw createError({ statusCode: 500, message: 'Failed to save PR record' })
   }
 
-  // Trigger review asynchronously (fire-and-forget for webhook response speed)
-  // In production, use a queue or edge function
+  console.log(`[Webhook] PR saved: #${pr.number} (id: ${prRecord.id})`)
+
+  // Trigger review asynchronously (fire-and-forget — don't block webhook response)
   runReviewInBackground(prRecord.id, repoRecord.id).catch(err => {
-    console.error('Background review failed:', err)
+    console.error('[Webhook] Background review failed:', err)
   })
 
   return {
@@ -92,19 +126,25 @@ export default defineEventHandler(async (event) => {
 })
 
 /**
- * Run the review process in the background
+ * Run the full review pipeline in the background:
+ * Fetch diff → AI analyze → save results → post to GitHub PR
  */
 async function runReviewInBackground(prId: string, repoId: string) {
   const supabase = getServerSupabase()
 
-  // 1. Get repo settings & user info
+  console.log(`[Review] Starting review for PR: ${prId}`)
+
+  // 1. Get repo + linked user
   const { data: repo } = await supabase
     .from('repositories')
     .select('*, user:profiles(*)')
     .eq('id', repoId)
     .single()
 
-  if (!repo) throw new Error('Repository not found')
+  if (!repo) {
+    console.error('[Review] Repository not found:', repoId)
+    return
+  }
 
   const [owner, repoName] = repo.github_repo.split('/')
 
@@ -115,10 +155,13 @@ async function runReviewInBackground(prId: string, repoId: string) {
     .eq('id', prId)
     .single()
 
-  if (!prRecord) throw new Error('PR not found')
+  if (!prRecord) {
+    console.error('[Review] PR not found:', prId)
+    return
+  }
 
   // 3. Create review record (in_progress)
-  const { data: review } = await supabase
+  const { data: review, error: reviewError } = await supabase
     .from('reviews')
     .insert({
       pr_id: prId,
@@ -130,16 +173,30 @@ async function runReviewInBackground(prId: string, repoId: string) {
     .select()
     .single()
 
-  if (!review) throw new Error('Failed to create review record')
+  if (reviewError || !review) {
+    console.error('[Review] Failed to create review record:', reviewError)
+    return
+  }
+
+  console.log(`[Review] Review record created: ${review.id}`)
 
   try {
-    // 4. Get GitHub token for API calls (use user's OAuth token or GitHub App)
+    // 4. Get GitHub token for API calls
     const token = await getUserGitHubToken(repo.user_id)
+    if (!token) {
+      console.warn('[Review] No GitHub token — cannot fetch PR diff or post comments')
+      await supabase.from('reviews').update({
+        status: 'failed',
+        summary: 'No GitHub token available. User needs to re-authenticate.',
+        completed_at: new Date().toISOString(),
+      }).eq('id', review.id)
+      return
+    }
 
     // 5. Fetch PR diff from GitHub
-    const files = await import('~/server/utils/github').then(m =>
-      m.fetchPRFiles(owner, repoName, prRecord.pr_number, token)
-    )
+    console.log(`[Review] Fetching PR diff: ${repo.github_repo}#${prRecord.pr_number}`)
+    const { fetchPRFiles } = await import('~/server/utils/github')
+    const files = await fetchPRFiles(owner, repoName, prRecord.pr_number, token)
 
     // Build diff content
     const diffContent = files
@@ -147,6 +204,7 @@ async function runReviewInBackground(prId: string, repoId: string) {
       .join('\n')
 
     if (!diffContent.trim()) {
+      console.log('[Review] No diff content to review')
       await supabase.from('reviews').update({
         status: 'completed',
         summary: 'No code changes to review.',
@@ -156,19 +214,23 @@ async function runReviewInBackground(prId: string, repoId: string) {
       return
     }
 
+    console.log(`[Review] Diff size: ${diffContent.length} chars, ${files.length} files`)
+
     // 6. Run AI review
-    const result = await import('~/server/utils/ai-reviewer').then(m =>
-      m.reviewPullRequest(diffContent, prRecord.title, repo.settings || {})
-    )
+    console.log('[Review] Calling DeepSeek API...')
+    const { reviewPullRequest } = await import('~/server/utils/ai-reviewer')
+    const result = await reviewPullRequest(diffContent, prRecord.title, repo.settings || {})
+
+    console.log(`[Review] AI review complete: score=${result.score}, ${result.comments.length} issues`)
 
     // 7. Save comments
-    const comments = result.comments.map(c => ({
-      ...c,
-      review_id: review.id,
-    }))
-
-    if (comments.length > 0) {
+    if (result.comments.length > 0) {
+      const comments = result.comments.map(c => ({
+        ...c,
+        review_id: review.id,
+      }))
       await supabase.from('review_comments').insert(comments)
+      console.log(`[Review] Saved ${comments.length} comments`)
     }
 
     // 8. Update review status
@@ -180,25 +242,39 @@ async function runReviewInBackground(prId: string, repoId: string) {
       completed_at: new Date().toISOString(),
     }).eq('id', review.id)
 
-    // 9. Post review to GitHub PR (if token available)
-    if (token) {
-      const criticalOnly = result.comments.filter(c => c.severity === 'critical' || c.severity === 'warning')
-      const body = `## 🤖 AI Code Review\n\n**Score: ${result.score}/10** | ${result.comments.length} issues found\n\n${result.summary}\n\n${criticalOnly.length > 0 ? '### 🔴 Critical & Warnings\n' + criticalOnly.map(c => `- **\`${c.file_path}\`** — ${c.message}`).join('\n') : ''}`
-      const reviewComments = result.comments.slice(0, 20).map(c => ({
-        path: c.file_path,
-        line: c.line_start || 1,
-        body: `**${c.severity.toUpperCase()}** [${c.category}]\n\n${c.message}\n\n${c.suggestion ? `💡 Suggestion:\n\`\`\`suggestion\n${c.suggestion}\n\`\`\`` : ''}`,
-      }))
-
-      await import('~/server/utils/github').then(m =>
-        m.postPRReview(owner, repoName, prRecord.pr_number, body, reviewComments, token)
-      ).catch(err => {
-        console.error('Failed to post review to GitHub:', err)
+    // 9. Post review to GitHub PR
+    console.log('[Review] Posting review to GitHub...')
+    const criticalOnly = result.comments.filter(c => c.severity === 'critical' || c.severity === 'warning')
+    const body = [
+      '## 🤖 AI Code Review',
+      '',
+      `**Score: ${result.score}/10** | ${result.comments.length} issues found`,
+      '',
+      result.summary,
+    ]
+    if (criticalOnly.length > 0) {
+      body.push('', '### 🔴 Critical & Warnings')
+      criticalOnly.forEach(c => {
+        body.push(`- **\`${c.file_path}\`** — ${c.message}`)
       })
     }
+    const reviewComments = result.comments.slice(0, 20).map(c => ({
+      path: c.file_path,
+      line: c.line_start || 1,
+      body: [
+        `**${c.severity.toUpperCase()}** [${c.category}]`,
+        '',
+        c.message,
+        c.suggestion ? `\n💡 **Suggestion:**\n\`\`\`suggestion\n${c.suggestion}\n\`\`\`` : '',
+      ].join('\n'),
+    }))
+
+    const { postPRReview } = await import('~/server/utils/github')
+    await postPRReview(owner, repoName, prRecord.pr_number, body.join('\n'), reviewComments, token)
+    console.log(`[Review] ✅ Review posted to GitHub PR #${prRecord.pr_number}`)
 
   } catch (err) {
-    console.error('Review failed:', err)
+    console.error('[Review] ❌ Review failed:', err)
     await supabase.from('reviews').update({
       status: 'failed',
       summary: `Review failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
@@ -207,17 +283,22 @@ async function runReviewInBackground(prId: string, repoId: string) {
   }
 }
 
-async function getUserGitHubToken(userId: string): Promise<string> {
+/**
+ * Get a user's GitHub token — stored in profiles during OAuth callback
+ */
+async function getUserGitHubToken(userId: string): Promise<string | null> {
   const supabase = getServerSupabase()
-  // Try to get a valid session token — this is a simplification
-  // In production, store encrypted tokens in the profiles table
+
   const { data } = await supabase
     .from('profiles')
     .select('github_token')
     .eq('id', userId)
     .single()
 
-  if (data?.github_token) return data.github_token
+  if (data?.github_token) {
+    return data.github_token
+  }
 
-  throw new Error('No GitHub token available. User needs to re-authenticate.')
+  console.warn(`[Review] No GitHub token found for user: ${userId}`)
+  return null
 }

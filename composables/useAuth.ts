@@ -18,6 +18,7 @@ export function useAuth() {
         provider: 'github',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
+          scopes: 'user:email repo admin:repo_hook',
         },
       })
       if (err) error.value = err.message
