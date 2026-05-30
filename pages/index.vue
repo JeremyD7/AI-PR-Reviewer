@@ -125,29 +125,56 @@ function formatTimeAgo(dateStr: string): string {
 onMounted(async () => {
   if (!user.value) return
 
-  // Fetch stats
+  const userId = user.value.id
+
+  // Get user's repo IDs for scoping
+  const { data: userRepos } = await supabase
+    .from('repositories')
+    .select('id')
+    .eq('user_id', userId)
+
+  const userRepoIds = userRepos?.map(r => r.id) || []
+
+  // Fetch stats scoped to user's repos
   const { count: repoCount } = await supabase
     .from('repositories')
     .select('*', { count: 'exact', head: true })
-    .eq('user_id', user.value.id)
+    .eq('user_id', userId)
     .eq('is_active', true)
 
-  const { count: reviewCount } = await supabase
+  const { count: reviewCount, data: reviewStats } = await supabase
     .from('reviews')
-    .select('*', { count: 'exact', head: true })
+    .select('issue_count, score', { count: 'exact' })
     .eq('status', 'completed')
+    .in('repo_id', userRepoIds.length > 0 ? userRepoIds : ['00000000-0000-0000-0000-000000000000'])
+
+  // Calculate issues found and average score
+  let totalIssues = 0
+  let totalScore = 0
+  if (reviewStats) {
+    reviewStats.forEach(r => {
+      totalIssues += r.issue_count || 0
+      totalScore += r.score || 0
+    })
+  }
+  const avgScore = reviewStats && reviewStats.length > 0
+    ? (totalScore / reviewStats.length).toFixed(1)
+    : '—'
 
   stats.value[0].value = repoCount || 0
   stats.value[1].value = reviewCount || 0
+  stats.value[2].value = totalIssues
+  stats.value[3].value = avgScore
 
-  // Fetch recent reviews
+  // Fetch recent reviews scoped to user's repos
   const { data: reviews } = await supabase
     .from('reviews')
     .select(`
       id, status, issue_count, score, created_at,
-      pr:pull_requests!inner(title, pr_number),
+      pr:pull_requests!inner(id, title, pr_number),
       repo:repositories!inner(repo_name)
     `)
+    .in('repo_id', userRepoIds.length > 0 ? userRepoIds : ['00000000-0000-0000-0000-000000000000'])
     .order('created_at', { ascending: false })
     .limit(10)
 
