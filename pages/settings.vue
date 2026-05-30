@@ -65,8 +65,11 @@
 </template>
 
 <script setup lang="ts">
+import { useAppStore } from '~/stores/app'
+
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
+const appStore = useAppStore()
 
 const services = ref({
   supabase: false,
@@ -76,6 +79,7 @@ const services = ref({
 
 async function signOut() {
   await supabase.auth.signOut()
+  appStore.addToast('已退出登录', { color: 'indigo', timeout: 3000 })
   navigateTo('/login')
 }
 

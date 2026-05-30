@@ -119,9 +119,11 @@
 
 <script setup lang="ts">
 import type { GitHubRepo } from '~/types/github'
+import { useAppStore } from '~/stores/app'
 
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
+const appStore = useAppStore()
 const { fetchRepos, createWebhook, deleteWebhook, error: githubError } = useGitHub()
 
 const showRepoSelector = ref(false)
@@ -197,7 +199,7 @@ async function addRepo(repo: GitHubRepo) {
   }, { onConflict: 'user_id,github_repo' })
 
   if (dbError) {
-    repoLoadError.value = `Failed to save repo: ${dbError.message}`
+    appStore.addToast(`添加仓库失败: ${dbError.message}`, { color: 'red' })
     addingRepo.value = ''
     return
   }
@@ -210,9 +212,14 @@ async function addRepo(repo: GitHubRepo) {
     await supabase.from('repositories').update({
       webhook_id: whResult.webhook_id,
     }).eq('user_id', user.value?.id).eq('github_repo', repo.full_name)
+    appStore.addToast(`仓库已连接: ${repo.full_name}`, { color: 'green' })
   } else {
     // Webhook creation failed — still keep the repo but warn
-    repoLoadError.value = `Repo connected, but webhook failed: ${githubError.value || 'unknown error'}`
+    appStore.addToast(`仓库已连接但 Webhook 创建失败: ${githubError.value || '未知错误'}`, {
+      color: 'yellow',
+      description: '请尝试在 GitHub 上手动配置 Webhook',
+      timeout: 8000,
+    })
   }
 
   addingRepo.value = ''
@@ -221,6 +228,7 @@ async function addRepo(repo: GitHubRepo) {
 
 async function toggleRepo(repoId: string, active: boolean) {
   await supabase.from('repositories').update({ is_active: active }).eq('id', repoId)
+  appStore.addToast(active ? '自动审查已开启' : '自动审查已关闭', { color: 'indigo' })
 }
 
 onMounted(async () => {

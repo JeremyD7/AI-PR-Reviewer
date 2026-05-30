@@ -129,11 +129,14 @@
 
 <script setup lang="ts">
 import type { ReviewSettings } from '~/types/database'
+import { useAppStore } from '~/stores/app'
 
 const route = useRoute()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
+const appStore = useAppStore()
 const triggeringReview = ref(false)
+let saveTimer: ReturnType<typeof setTimeout> | null = null
 
 const repo = ref<any>(null)
 const prs = ref<any[]>([])
@@ -166,7 +169,12 @@ function toggleCategory(cat: string) {
 
 async function saveSettings() {
   if (!repo.value) return
-  await supabase.from('repositories').update({ settings: settings.value }).eq('id', repo.value.id)
+  // Debounce: wait 500ms after last change before saving
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(async () => {
+    await supabase.from('repositories').update({ settings: settings.value }).eq('id', repo.value.id)
+    appStore.addToast('设置已保存', { color: 'green', timeout: 2000 })
+  }, 500)
 }
 
 async function savePatterns() {
@@ -177,12 +185,16 @@ async function savePatterns() {
 async function triggerManualReview() {
   triggeringReview.value = true
   try {
-    await $fetch('/api/reviews/trigger', {
+    const result = await $fetch('/api/reviews/trigger', {
       method: 'POST',
       body: { repo_id: repo.value.id },
     })
-  } catch (e) {
-    console.error('Failed to trigger review:', e)
+    appStore.addToast('审查已触发，稍后查看结果', {
+      color: 'green',
+      description: result?.pr_id ? `PR ID: ${result.pr_id}` : undefined,
+    })
+  } catch (e: any) {
+    appStore.addToast(`触发审查失败: ${e?.message || '未知错误'}`, { color: 'red' })
   } finally {
     triggeringReview.value = false
   }
