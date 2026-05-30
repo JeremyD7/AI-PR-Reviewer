@@ -1,0 +1,94 @@
+<template>
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Settings</h1>
+
+    <!-- Profile -->
+    <UCard class="mb-6 bg-white dark:bg-gray-900">
+      <template #header>
+        <h2 class="font-semibold text-gray-900 dark:text-white">Profile</h2>
+      </template>
+      <div class="flex items-center gap-4">
+        <UAvatar
+          :src="user?.user_metadata?.avatar_url"
+          :alt="user?.user_metadata?.user_name"
+          size="lg"
+        />
+        <div>
+          <p class="font-medium text-gray-900 dark:text-white">
+            {{ user?.user_metadata?.user_name || 'Unknown' }}
+          </p>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{{ user?.email }}</p>
+        </div>
+      </div>
+    </UCard>
+
+    <!-- API Status -->
+    <UCard class="mb-6 bg-white dark:bg-gray-900">
+      <template #header>
+        <h2 class="font-semibold text-gray-900 dark:text-white">Service Status</h2>
+      </template>
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-sm text-gray-600 dark:text-gray-400">Supabase Connection</span>
+          <UBadge :color="services.supabase ? 'green' : 'red'" size="sm">
+            {{ services.supabase ? 'Connected' : 'Disconnected' }}
+          </UBadge>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-sm text-gray-600 dark:text-gray-400">GitHub OAuth</span>
+          <UBadge :color="services.github ? 'green' : 'red'" size="sm">
+            {{ services.github ? 'Connected' : 'Disconnected' }}
+          </UBadge>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-sm text-gray-600 dark:text-gray-400">Claude API</span>
+          <UBadge :color="services.claude ? 'green' : 'red'" size="sm">
+            {{ services.claude ? 'Configured' : 'Not Configured' }}
+          </UBadge>
+        </div>
+      </div>
+    </UCard>
+
+    <!-- Danger Zone -->
+    <UCard class="bg-white dark:bg-gray-900 border-red-200 dark:border-red-900">
+      <template #header>
+        <h2 class="font-semibold text-red-600 dark:text-red-400">Danger Zone</h2>
+      </template>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        Sign out of your account. You can sign back in at any time.
+      </p>
+      <UButton color="red" variant="soft" @click="signOut">
+        Sign Out
+      </UButton>
+    </UCard>
+  </div>
+</template>
+
+<script setup lang="ts">
+const supabase = useSupabaseClient()
+const user = useSupabaseUser()
+
+const services = ref({
+  supabase: false,
+  github: false,
+  claude: false,
+})
+
+async function signOut() {
+  await supabase.auth.signOut()
+  navigateTo('/login')
+}
+
+onMounted(async () => {
+  // Check Supabase
+  services.value.supabase = !!user.value
+
+  // Check GitHub
+  const { data: session } = await supabase.auth.getSession()
+  services.value.github = !!session.session?.provider_token
+
+  // Check Claude (via env)
+  const config = useRuntimeConfig()
+  services.value.claude = !!config.anthropicApiKey
+})
+</script>

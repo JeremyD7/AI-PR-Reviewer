@@ -1,0 +1,27 @@
+# Nuxt
+.nuxt
+.output
+dist
+node_modules
+
+# Env
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Supabase
+supabase/.temp
+supabase/.branches
+
+# Logs
+*.log

@@ -1,0 +1,28 @@
+{
+  "name": "ai-pr-reviewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "lint": "eslint .",
+    "db:migrate": "supabase migration up",
+    "db:types": "supabase gen types typescript --local > types/database.types.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.51.0",
+    "@nuxt/ui": "^2.21.1",
+    "@nuxtjs/supabase": "^1.5.2",
+    "@supabase/supabase-js": "^2.49.1",
+    "nuxt": "^3.17.0",
+    "pinia": "^2.3.1"
+  },
+  "devDependencies": {
+    "@nuxt/devtools": "^2.4.0",
+    "typescript": "^5.8.0"
+  }
+}
