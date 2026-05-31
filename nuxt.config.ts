@@ -31,9 +31,9 @@ export default defineNuxtConfig({
     },
   },
 
-  // Netlify deployment
+  // Vercel deployment (serverless functions)
   nitro: {
-    preset: 'netlify',
+    preset: 'vercel',
   },
 
   // Nuxt UI v2 config
