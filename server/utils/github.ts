@@ -2,7 +2,7 @@
  * GitHub API helpers (server-side)
  */
 import crypto from 'crypto'
-import type { GitHubPRFile, GitHubRepo, GitHubPR, GitHubWebhookPayload } from '~/types/github'
+import type { GitHubPRFile, GitHubRepo, GitHubPR } from '~/types/github'
 
 /**
  * Fetch user's GitHub repositories using their OAuth token
