@@ -1,0 +1,25 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NUXT_NITRO_PRESET = "netlify"
+
+# Redirect all server routes to Netlify Functions
+# Nuxt's Nitro preset handles this automatically via the generated
+# netlify redirects in dist/_redirects
+
+[[headers]]
+  for = "/_nuxt/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/favicon.svg"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+# Environment-specific notes:
+# All sensitive env vars (API keys, secrets) should be set in
+# Netlify Dashboard → Site Settings → Environment Variables
+# NOT committed to this file.

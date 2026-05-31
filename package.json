@@ -17,7 +17,6 @@
     "@nuxt/ui": "^2.21.1",
     "@nuxtjs/supabase": "^1.5.2",
     "@supabase/supabase-js": "^2.49.1",
-    "ngrok": "^5.0.0-beta.2",
     "nuxt": "^3.17.0",
     "pinia": "^2.3.1"
   },
@@ -25,5 +24,8 @@
     "@nuxt/devtools": "^2.4.0",
     "@types/node": "^22.0.0",
     "typescript": "^5.8.0"
+  },
+  "optionalDependencies": {
+    "ngrok": "^5.0.0-beta.2"
   }
 }

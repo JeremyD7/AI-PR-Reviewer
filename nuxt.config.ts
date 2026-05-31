@@ -31,6 +31,11 @@ export default defineNuxtConfig({
     },
   },
 
+  // Netlify deployment
+  nitro: {
+    preset: 'netlify',
+  },
+
   // Nuxt UI v2 config
   ui: {
     icons: ["heroicons", "simple-icons"],
@@ -55,10 +60,12 @@ export default defineNuxtConfig({
     strict: true,
   },
 
-  // Allow ngrok tunneling for webhook testing
-  vite: {
-    server: {
-      allowedHosts: ['.ngrok-free.dev', '.ngrok.io'],
+  // Allow ngrok tunneling for webhook testing (dev only)
+  ...(process.env.NODE_ENV === 'development' ? {
+    vite: {
+      server: {
+        allowedHosts: ['.ngrok-free.dev', '.ngrok.io'],
+      },
     },
-  },
+  } : {}),
 });
