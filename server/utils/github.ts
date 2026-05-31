@@ -1,7 +1,9 @@
 /**
  * GitHub API helpers (server-side)
+ *
+ * All crypto operations use Web Crypto API (crypto.subtle) for
+ * Cloudflare Workers / Pages compatibility (no Node.js 'crypto' module).
  */
-import crypto from 'crypto'
 import type { GitHubPRFile, GitHubRepo, GitHubPR } from '~/types/github'
 
 /**
@@ -134,70 +136,44 @@ export async function postPRReview(
   }
 }
 
+// ── Web Crypto helpers (Cloudflare-compatible) ──
+
+/** HMAC-SHA256 → hex string using Web Crypto API */
+async function hmacSha256Hex(key: string, message: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(key),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const sig = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(message))
+  return Array.from(new Uint8Array(sig))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+/** Constant-time string comparison */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let result = 0
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return result === 0
+}
+
 /**
- * Verify GitHub webhook signature
+ * Verify GitHub webhook signature (Web Crypto, Cloudflare-compatible)
  */
-export function verifyWebhookSignature(
+export async function verifyWebhookSignature(
   payload: string,
   signature: string,
   secret: string,
-): boolean {
-  const expected = `sha256=${crypto.createHmac('sha256', secret).update(payload).digest('hex')}`
-  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+): Promise<boolean> {
+  const hex = await hmacSha256Hex(secret, payload)
+  const expected = `sha256=${hex}`
+  return timingSafeEqual(signature, expected)
 }
 
-/**
- * Get GitHub App installation token
- */
-export async function getInstallationToken(
-  installationId: number,
-): Promise<string> {
-  const config = useRuntimeConfig()
-  const appId = config.githubAppId
-  const privateKey = config.githubAppPrivateKey
-
-  if (!appId || !privateKey) {
-    throw new Error('GitHub App not configured')
-  }
-
-  // Generate JWT for GitHub App
-  const jwt = generateAppJwt(appId, privateKey)
-
-  const response = await fetch(
-    `https://api.github.com/app/installations/${installationId}/access_tokens`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${jwt}`,
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'AI-PR-Reviewer',
-      },
-    }
-  )
-
-  if (!response.ok) {
-    throw new Error(`Failed to get installation token: ${response.status}`)
-  }
-
-  const data = await response.json() as { token: string }
-  return data.token
-}
-
-function generateAppJwt(appId: string, privateKey: string): string {
-  const now = Math.floor(Date.now() / 1000)
-
-  const payload = {
-    iat: now - 60,
-    exp: now + 600,
-    iss: appId,
-  }
-
-  const header = { alg: 'RS256', typ: 'JWT' }
-  const encodedHeader = Buffer.from(JSON.stringify(header)).toString('base64url')
-  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url')
-  const toSign = `${encodedHeader}.${encodedPayload}`
-  const signature = crypto.sign('sha256', Buffer.from(toSign), privateKey)
-  const encodedSignature = signature.toString('base64url')
-
-  return `${toSign}.${encodedSignature}`
-}

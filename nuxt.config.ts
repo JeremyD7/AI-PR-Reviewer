@@ -31,9 +31,9 @@ export default defineNuxtConfig({
     },
   },
 
-  // Vercel deployment (serverless functions)
+  // Cloudflare Pages deployment (edge functions)
   nitro: {
-    preset: 'vercel',
+    preset: 'cloudflare-pages',
   },
 
   // Nuxt UI v2 config

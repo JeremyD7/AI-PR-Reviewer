@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (secret) {
-    const isValid = verifyWebhookSignature(body, signature, secret)
+    const isValid = await verifyWebhookSignature(body, signature, secret)
     if (!isValid) {
       console.error('[Webhook] Invalid signature')
       throw createError({ statusCode: 401, message: 'Invalid signature' })

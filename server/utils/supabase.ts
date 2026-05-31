@@ -9,7 +9,7 @@ export function getServerSupabase() {
   if (serverClient) return serverClient
 
   const config = useRuntimeConfig()
-  const url = process.env.SUPABASE_URL || ''
+  const url = config.public.supabase?.url || ''
   const serviceKey = config.supabaseServiceKey || ''
 
   if (!url || !serviceKey) {
