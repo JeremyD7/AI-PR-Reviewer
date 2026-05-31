@@ -91,8 +91,8 @@ onMounted(async () => {
   const { data: session } = await supabase.auth.getSession()
   services.value.github = !!session.session?.provider_token
 
-  // Check Claude (via env)
+  // Check DeepSeek (via public runtime config — boolean flag only, no key exposed)
   const config = useRuntimeConfig()
-  services.value.deepseek = !!config.deepseekApiKey
+  services.value.deepseek = !!config.public.deepseekConfigured
 })
 </script>

@@ -4,7 +4,6 @@
 import { defineStore } from 'pinia'
 
 export const useAppStore = defineStore('app', () => {
-  const sidebarOpen = ref(false)
   const toastMessages = ref<Array<{
     id: string
     title: string
@@ -34,7 +33,6 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
-    sidebarOpen,
     toastMessages,
     addToast,
     removeToast,

@@ -22,11 +22,12 @@ export default defineNuxtConfig({
     deepseekApiKey: process.env.DEEPSEEK_API_KEY,
     supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY,
 
-    // Public (exposed to client)
+    // Public (exposed to client) — never expose secrets here
     public: {
       githubClientId: process.env.GITHUB_CLIENT_ID,
       githubRedirectUri: process.env.GITHUB_REDIRECT_URI,
       appUrl: process.env.NUXT_PUBLIC_APP_URL,
+      deepseekConfigured: !!process.env.DEEPSEEK_API_KEY,
     },
   },
 
