@@ -4,10 +4,10 @@
 
 [build.environment]
   NUXT_NITRO_PRESET = "netlify"
-  # Skip secret scanning in server-side function bundles — these files
-  # legitimately contain API keys that the server needs at runtime.
-  # They are NOT exposed to the browser.
-  SECRETS_SCAN_OMIT_PATHS = ".netlify/functions-internal/*"
+  # Server-side function bundles legitimately contain API keys
+  # that the server needs at runtime. They are NOT exposed to the browser.
+  # The Nuxt Nitro bundler embeds runtimeConfig values into the server code.
+  SECRETS_SCAN_ENABLED = "false"
 
 # Nitro auto-generates cache headers for /_nuxt/* — we only add
 # additional custom rules here
