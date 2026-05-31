@@ -1,48 +1,47 @@
 /**
- * Validate required environment variables at startup
- * Fails fast with clear error messages instead of runtime surprises
+ * Validate required environment variables at startup.
+ *
+ * IMPORTANT: In serverless environments (Netlify), this runs on each cold start.
+ * We use useRuntimeConfig() instead of process.env directly because Nuxt's
+ * runtimeConfig supports NUXT_ prefix overrides at runtime. We also downgrade
+ * missing vars to warnings rather than hard crashes — individual API handlers
+ * will fail with clear errors if config is truly missing.
  */
 export default defineNitroPlugin(() => {
-  const errors: string[] = []
+  const config = useRuntimeConfig()
+  const warnings: string[] = []
 
-  const required = {
-    SUPABASE_URL: process.env.SUPABASE_URL,
-    SUPABASE_KEY: process.env.SUPABASE_KEY,
-    SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY,
-    GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID,
-    GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET,
-    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
-  }
+  // Required: check via runtimeConfig (build-time + NUXT_ runtime overrides)
+  const checks: Array<[string, any, string]> = [
+    ['SUPABASE_URL', config.public.supabase?.url, 'Supabase 连接地址'],
+    ['SUPABASE_KEY', config.public.supabase?.key, 'Supabase Anon Key'],
+    ['SUPABASE_SERVICE_KEY', config.supabaseServiceKey, 'Supabase Service Role Key'],
+    ['GITHUB_CLIENT_ID', config.public.githubClientId, 'GitHub OAuth Client ID'],
+    ['GITHUB_CLIENT_SECRET', config.githubClientSecret, 'GitHub OAuth Client Secret'],
+    ['DEEPSEEK_API_KEY', config.deepseekApiKey, 'DeepSeek API Key'],
+  ]
 
-  for (const [name, value] of Object.entries(required)) {
-    if (!value || value.trim() === '') {
-      errors.push(`❌ 缺少 ${name}，请在 .env 中配置`)
+  for (const [name, value, label] of checks) {
+    if (!value || (typeof value === 'string' && value.trim() === '')) {
+      warnings.push(`⚠️  缺少 ${name}（${label}）— 请在 Netlify 环境变量中配置`)
     }
   }
 
-  // Warnings (optional but recommended)
-  const warnings: string[] = []
-  if (!process.env.GITHUB_APP_WEBHOOK_SECRET) {
-    warnings.push('⚠️  GITHUB_APP_WEBHOOK_SECRET 未配置 — Webhook 签名验证将跳过（仅开发环境可接受）')
+  // Optional but recommended
+  if (!config.githubAppWebhookSecret) {
+    warnings.push('💡 GITHUB_APP_WEBHOOK_SECRET 未配置 — Webhook 签名验证将跳过（仅开发环境可接受）')
   }
-  if (!process.env.NUXT_PUBLIC_APP_URL) {
-    warnings.push('⚠️  NUXT_PUBLIC_APP_URL 未配置 — Webhook 将使用默认地址')
-  }
-
-  if (errors.length > 0) {
-    console.error('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.error('🔴 环境变量配置错误：')
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    for (const err of errors) console.error(err)
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
-    throw new Error(`缺少 ${errors.length} 个必需的环境变量`)
+  if (!config.public.appUrl) {
+    warnings.push('💡 NUXT_PUBLIC_APP_URL 未配置 — Webhook 将使用默认地址')
   }
 
   if (warnings.length > 0) {
     console.warn('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.warn('🔶 环境变量检查：')
+    console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     for (const w of warnings) console.warn(w)
     console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+  } else {
+    console.log('✅ 环境变量校验通过')
   }
-
-  console.log('✅ 环境变量校验通过')
 })
