@@ -77,41 +77,52 @@
 </template>
 
 <script setup lang="ts">
-const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 
-const stats = ref([
-  {
-    label: 'Active Repos',
-    value: 0,
-    icon: 'i-heroicons-folder',
-    bgColor: 'bg-indigo-50 dark:bg-indigo-950',
-    iconColor: 'text-indigo-600 dark:text-indigo-400',
-  },
-  {
-    label: 'Reviews Completed',
-    value: 0,
-    icon: 'i-heroicons-check-badge',
-    bgColor: 'bg-green-50 dark:bg-green-950',
-    iconColor: 'text-green-600 dark:text-green-400',
-  },
-  {
-    label: 'Issues Found',
-    value: 0,
-    icon: 'i-heroicons-exclamation-triangle',
-    bgColor: 'bg-yellow-50 dark:bg-yellow-950',
-    iconColor: 'text-yellow-600 dark:text-yellow-400',
-  },
-  {
-    label: 'Avg Score',
-    value: '—',
-    icon: 'i-heroicons-chart-bar',
-    bgColor: 'bg-purple-50 dark:bg-purple-950',
-    iconColor: 'text-purple-600 dark:text-purple-400',
-  },
-])
+// SSR 直出：useFetch 在服务端渲染阶段调用 /api/dashboard，
+// 数据随 HTML payload 一次性下发，客户端首帧即含数据，无白屏、无请求瀑布流。
+// SWR 缓存：再次进入页面时 getCachedData 立即返回上次的缓存数据（零等待），
+// 后台自动用新数据刷新，避免闪烁与重复请求。
+const { data: dashboard } = await useFetch('/api/dashboard', {
+  getCachedData: key => useNuxtData(key).data.value,
+})
 
-const recentReviews = ref<any[]>([])
+const stats = computed(() => {
+  const d = dashboard.value
+  const avg = d?.avgScore != null ? d.avgScore : '—'
+  return [
+    {
+      label: 'Active Repos',
+      value: d?.repoCount ?? 0,
+      icon: 'i-heroicons-folder',
+      bgColor: 'bg-indigo-50 dark:bg-indigo-950',
+      iconColor: 'text-indigo-600 dark:text-indigo-400',
+    },
+    {
+      label: 'Reviews Completed',
+      value: d?.reviewCount ?? 0,
+      icon: 'i-heroicons-check-badge',
+      bgColor: 'bg-green-50 dark:bg-green-950',
+      iconColor: 'text-green-600 dark:text-green-400',
+    },
+    {
+      label: 'Issues Found',
+      value: d?.totalIssues ?? 0,
+      icon: 'i-heroicons-exclamation-triangle',
+      bgColor: 'bg-yellow-50 dark:bg-yellow-950',
+      iconColor: 'text-yellow-600 dark:text-yellow-400',
+    },
+    {
+      label: 'Avg Score',
+      value: avg,
+      icon: 'i-heroicons-chart-bar',
+      bgColor: 'bg-purple-50 dark:bg-purple-950',
+      iconColor: 'text-purple-600 dark:text-purple-400',
+    },
+  ]
+})
+
+const recentReviews = computed(() => dashboard.value?.recentReviews || [])
 
 function formatTimeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -121,73 +132,4 @@ function formatTimeAgo(dateStr: string): string {
   if (hours < 24) return `${hours}h ago`
   return `${Math.floor(hours / 24)}d ago`
 }
-
-onMounted(async () => {
-  if (!user.value) return
-
-  const userId = user.value.id
-
-  // Get user's repo IDs for scoping
-  const { data: userRepos } = await supabase
-    .from('repositories')
-    .select('id')
-    .eq('user_id', userId)
-
-  const userRepoIds = userRepos?.map(r => r.id) || []
-
-  // Fetch stats scoped to user's repos
-  const { count: repoCount } = await supabase
-    .from('repositories')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('is_active', true)
-
-  const { count: reviewCount, data: reviewStats } = await supabase
-    .from('reviews')
-    .select('issue_count, score', { count: 'exact' })
-    .eq('status', 'completed')
-    .in('repo_id', userRepoIds.length > 0 ? userRepoIds : ['00000000-0000-0000-0000-000000000000'])
-
-  // Calculate issues found and average score
-  let totalIssues = 0
-  let totalScore = 0
-  if (reviewStats) {
-    reviewStats.forEach(r => {
-      totalIssues += r.issue_count || 0
-      totalScore += r.score || 0
-    })
-  }
-  const avgScore = reviewStats && reviewStats.length > 0
-    ? (totalScore / reviewStats.length).toFixed(1)
-    : '—'
-
-  stats.value[0].value = repoCount || 0
-  stats.value[1].value = reviewCount || 0
-  stats.value[2].value = totalIssues
-  stats.value[3].value = avgScore
-
-  // Fetch recent reviews scoped to user's repos
-  const { data: reviews } = await supabase
-    .from('reviews')
-    .select(`
-      id, status, issue_count, score, created_at,
-      pr:pull_requests!inner(id, title, pr_number),
-      repo:repositories!inner(repo_name)
-    `)
-    .in('repo_id', userRepoIds.length > 0 ? userRepoIds : ['00000000-0000-0000-0000-000000000000'])
-    .order('created_at', { ascending: false })
-    .limit(10)
-
-  if (reviews) {
-    recentReviews.value = reviews.map((r: any) => ({
-      id: r.id,
-      pr_id: r.pr?.id,
-      pr_title: r.pr?.title || `PR #${r.pr?.pr_number}`,
-      repo_name: r.repo?.repo_name,
-      status: r.status,
-      issue_count: r.issue_count,
-      created_at: r.created_at,
-    }))
-  }
-})
 </script>
